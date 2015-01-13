@@ -24,3 +24,9 @@ proguard/
 
 # Log Files
 *.log
+
+# Platform files
+*.iml
+/.idea
+.DS_Store
+/build
