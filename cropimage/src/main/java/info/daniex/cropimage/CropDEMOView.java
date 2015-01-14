@@ -1,19 +1,26 @@
 package info.daniex.cropimage;
 
+//import static info.daniex.cropimage.CropImageView.State.ANIMATE_ZOOM;
+//import static info.daniex.cropimage.CropImageView.State.DRAG;
+//import static info.daniex.cropimage.CropImageView.State.FLING;
+//import static info.daniex.cropimage.CropImageView.State.NONE;
+//import static info.daniex.cropimage.CropImageView.State.ZOOM;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+
 import android.annotation.TargetApi;
 import android.content.Context;
-import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.PointF;
-import android.graphics.PorterDuff;
-import android.graphics.PorterDuffXfermode;
-import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Build.VERSION;
+import android.os.Build.VERSION_CODES;
 import android.os.Bundle;
 import android.os.Parcelable;
 import android.util.AttributeSet;
@@ -24,50 +31,37 @@ import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.view.animation.AccelerateDecelerateInterpolator;
 import android.widget.ImageView;
-import android.widget.OverScroller;
 import android.widget.Scroller;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-
 /**
- * Created by daniex on 15-1-14.
+ * Created by daniex on 15-1-13.
  */
-public class CropImageView extends ImageView {
-
-    private float w;
-    private float x0;
-    private float y0;
-    private float x1;
-    private float y1;
-
-
-    private static final String DEBUG = "DEBUG";
+public class CropDEMOView extends ImageView {
+    private static final boolean DEBUG = BuildConfig.DEBUG;
 
     //
-    // SuperMin and SuperMax multipliers. Determine how much the image can be
-    // zoomed below or above the zoom boundaries, before animating back to the
-    // min/max zoom boundary.
-    //
+// SuperMin and SuperMax multipliers. Determine how much the image can be
+// zoomed below or above the zoom boundaries, before animating back to the
+// min/max zoom boundary.
+//
     private static final float SUPER_MIN_MULTIPLIER = .75f;
     private static final float SUPER_MAX_MULTIPLIER = 1.25f;
 
     //
-    // Scale of image ranges from minScale to maxScale, where minScale == 1
-    // when the image is stretched to fit view.
-    //
+// Scale of image ranges from minScale to maxScale, where minScale == 1
+// when the image is stretched to fit view.
+//
     private float normalizedScale;
 
     //
-    // Matrix applied to image. MSCALE_X and MSCALE_Y should always be equal.
-    // MTRANS_X and MTRANS_Y are the other values used. prevMatrix is the matrix
-    // saved prior to the screen rotating.
-    //
-    private Matrix matrix, prevMatrix;
+// Matrix applied to image. MSCALE_X and MSCALE_Y should always be equal.
+// MTRANS_X and MTRANS_Y are the other values used. savedMatrix is the matrix
+// saved prior to the screen rotating.
+//
+    private Matrix matrix, savedMatrix;
 
-    private static enum State {NONE, DRAG, ZOOM, FLING, ANIMATE_ZOOM}
+    public static enum State {NONE, DRAG, ZOOM, FLING, ANIMATE_ZOOM}
 
-    ;
     private State state;
 
     private float minScale;
@@ -79,40 +73,47 @@ public class CropImageView extends ImageView {
     private Context context;
     private Fling fling;
 
-    private ScaleType mScaleType;
-
-    private boolean imageRenderedAtLeastOnce;
-    private boolean onDrawReady;
-
-    private ZoomVariables delayedZoomVariables;
-
     //
-    // Size of view and previous view size (ie before rotation)
-    //
+// Size of view and previous view size (ie before rotation)
+//
     private int viewWidth, viewHeight, prevViewWidth, prevViewHeight;
 
     //
-    // Size of image when it is stretched to fit view. Before and After rotation.
-    //
+// Size of image when it is stretched to fit view. Before and After rotation.
+//
     private float matchViewWidth, matchViewHeight, prevMatchViewWidth, prevMatchViewHeight;
+
+    //
+// After setting image, a value of true means the new image should maintain
+// the zoom of the previous image. False means it should be resized within the view.
+//
+    private boolean maintainZoomAfterSetImage;
+
+    //
+// True when maintainZoomAfterSetImage has been set to true and setImage has been called.
+//
+    private boolean setImageCalledRecenterImage;
 
     private ScaleGestureDetector mScaleDetector;
     private GestureDetector mGestureDetector;
-    private GestureDetector.OnDoubleTapListener doubleTapListener = null;
-    private OnTouchListener userTouchListener = null;
-    private OnTouchImageViewListener touchImageViewListener = null;
 
-    public CropImageView(Context context) {
+    private float w;
+
+    private float x0;
+
+    private float y0;
+
+    public CropDEMOView(Context context) {
         super(context);
         sharedConstructing(context);
     }
 
-    public CropImageView(Context context, AttributeSet attrs) {
+    public CropDEMOView(Context context, AttributeSet attrs) {
         super(context, attrs);
         sharedConstructing(context);
     }
 
-    public CropImageView(Context context, AttributeSet attrs, int defStyle) {
+    public CropDEMOView(Context context, AttributeSet attrs, int defStyle) {
         super(context, attrs, defStyle);
         sharedConstructing(context);
     }
@@ -123,39 +124,24 @@ public class CropImageView extends ImageView {
         mScaleDetector = new ScaleGestureDetector(context, new ScaleListener());
         mGestureDetector = new GestureDetector(context, new GestureListener());
         matrix = new Matrix();
-        prevMatrix = new Matrix();
+        savedMatrix = new Matrix();
         m = new float[9];
         normalizedScale = 1;
-        if (mScaleType == null) {
-            mScaleType = ScaleType.FIT_CENTER;
-        }
-        minScale = 1;
+        minScale = 0.2f;
         maxScale = 3;
         superMinScale = SUPER_MIN_MULTIPLIER * minScale;
         superMaxScale = SUPER_MAX_MULTIPLIER * maxScale;
+        maintainZoomAfterSetImage = false;
         setImageMatrix(matrix);
         setScaleType(ScaleType.MATRIX);
         setState(State.NONE);
-        onDrawReady = false;
-        super.setOnTouchListener(new PrivateOnTouchListener());
-    }
-
-    @Override
-    public void setOnTouchListener(OnTouchListener l) {
-        userTouchListener = l;
-    }
-
-    public void setOnTouchImageViewListener(OnTouchImageViewListener l) {
-        touchImageViewListener = l;
-    }
-
-    public void setOnDoubleTapListener(GestureDetector.OnDoubleTapListener l) {
-        doubleTapListener = l;
+        setOnTouchListener(new TouchImageViewListener());
     }
 
     @Override
     public void setImageResource(int resId) {
         super.setImageResource(resId);
+        setImageCalled();
         savePreviousImageValues();
         fitImageToView();
     }
@@ -163,6 +149,7 @@ public class CropImageView extends ImageView {
     @Override
     public void setImageBitmap(Bitmap bm) {
         super.setImageBitmap(bm);
+        setImageCalled();
         savePreviousImageValues();
         fitImageToView();
     }
@@ -170,6 +157,7 @@ public class CropImageView extends ImageView {
     @Override
     public void setImageDrawable(Drawable drawable) {
         super.setImageDrawable(drawable);
+        setImageCalled();
         savePreviousImageValues();
         fitImageToView();
     }
@@ -177,69 +165,25 @@ public class CropImageView extends ImageView {
     @Override
     public void setImageURI(Uri uri) {
         super.setImageURI(uri);
+        setImageCalled();
         savePreviousImageValues();
         fitImageToView();
     }
 
-    @Override
-    public void setScaleType(ScaleType type) {
-        if (type == ScaleType.FIT_START || type == ScaleType.FIT_END) {
-            throw new UnsupportedOperationException("TouchImageView does not support FIT_START or FIT_END");
+    private void setImageCalled() {
+        if (!maintainZoomAfterSetImage) {
+            setImageCalledRecenterImage = true;
         }
-        if (type == ScaleType.MATRIX) {
-            super.setScaleType(ScaleType.MATRIX);
-
-        } else {
-            mScaleType = type;
-            if (onDrawReady) {
-                //
-                // If the image is already rendered, scaleType has been called programmatically
-                // and the TouchImageView should be updated with the new scaleType.
-                //
-                setZoom(this);
-            }
-        }
-    }
-
-    @Override
-    public ScaleType getScaleType() {
-        return mScaleType;
-    }
-
-    /**
-     * Returns false if image is in initial, unzoomed state. False, otherwise.
-     *
-     * @return true if image is zoomed
-     */
-    public boolean isZoomed() {
-        return normalizedScale != 1;
-    }
-
-    /**
-     * Return a Rect representing the zoomed image.
-     *
-     * @return rect representing zoomed image
-     */
-    public RectF getZoomedRect() {
-        if (mScaleType == ScaleType.FIT_XY) {
-            throw new UnsupportedOperationException("getZoomedRect() not supported with FIT_XY");
-        }
-        PointF topLeft = transformCoordTouchToBitmap(0, 0, true);
-        PointF bottomRight = transformCoordTouchToBitmap(viewWidth, viewHeight, true);
-
-        float w = getDrawable().getIntrinsicWidth();
-        float h = getDrawable().getIntrinsicHeight();
-        return new RectF(topLeft.x / w, topLeft.y / h, bottomRight.x / w, bottomRight.y / h);
     }
 
     /**
      * Save the current matrix and view dimensions
-     * in the prevMatrix and prevView variables.
+     * in the savedMatrix and prevView variables.
      */
     private void savePreviousImageValues() {
-        if (matrix != null && viewHeight != 0 && viewWidth != 0) {
+        if (matrix != null) {
             matrix.getValues(m);
-            prevMatrix.setValues(m);
+            savedMatrix.setValues(m);
             prevMatchViewHeight = matchViewHeight;
             prevMatchViewWidth = matchViewWidth;
             prevViewHeight = viewHeight;
@@ -258,7 +202,6 @@ public class CropImageView extends ImageView {
         bundle.putInt("viewHeight", viewHeight);
         matrix.getValues(m);
         bundle.putFloatArray("matrix", m);
-        bundle.putBoolean("imageRendered", imageRenderedAtLeastOnce);
         return bundle;
     }
 
@@ -268,23 +211,16 @@ public class CropImageView extends ImageView {
             Bundle bundle = (Bundle) state;
             normalizedScale = bundle.getFloat("saveScale");
             m = bundle.getFloatArray("matrix");
-            prevMatrix.setValues(m);
+            savedMatrix.setValues(m);
             prevMatchViewHeight = bundle.getFloat("matchViewHeight");
             prevMatchViewWidth = bundle.getFloat("matchViewWidth");
             prevViewHeight = bundle.getInt("viewHeight");
             prevViewWidth = bundle.getInt("viewWidth");
-            imageRenderedAtLeastOnce = bundle.getBoolean("imageRendered");
             super.onRestoreInstanceState(bundle.getParcelable("instanceState"));
             return;
         }
 
         super.onRestoreInstanceState(state);
-    }
-
-    @Override
-    public void onConfigurationChanged(Configuration newConfig) {
-        super.onConfigurationChanged(newConfig);
-        savePreviousImageValues();
     }
 
     /**
@@ -316,6 +252,17 @@ public class CropImageView extends ImageView {
     }
 
     /**
+     * After setting image, a value of true means the new image should maintain
+     * the zoom of the previous image. False means the image should be resized within
+     * the view. Defaults value is true.
+     *
+     * @param maintainZoom
+     */
+    public void maintainZoomAfterSetImage(boolean maintainZoom) {
+        maintainZoomAfterSetImage = maintainZoom;
+    }
+
+    /**
      * Get the current zoom. This is the zoom relative to the initial
      * scale, not the original resource.
      *
@@ -336,113 +283,26 @@ public class CropImageView extends ImageView {
     }
 
     /**
-     * Reset zoom and translation to initial state.
+     * For a given point on the view (ie, a touch event), returns the
+     * point relative to the original drawable's coordinate system.
+     *
+     * @param x
+     * @param y
+     * @return PointF relative to original drawable's coordinate system.
      */
-    public void resetZoom() {
-        normalizedScale = 1;
-        fitImageToView();
+    public PointF getDrawablePointFromTouchPoint(float x, float y) {
+        return transformCoordTouchToBitmap(x, y, true);
     }
 
     /**
-     * Set zoom to the specified scale. Image will be centered by default.
+     * For a given point on the view (ie, a touch event), returns the
+     * point relative to the original drawable's coordinate system.
      *
-     * @param scale
+     * @param p
+     * @return PointF relative to original drawable's coordinate system.
      */
-    public void setZoom(float scale) {
-        setZoom(scale, 0.5f, 0.5f);
-    }
-
-    /**
-     * Set zoom to the specified scale. Image will be centered around the point
-     * (focusX, focusY). These floats range from 0 to 1 and denote the focus point
-     * as a fraction from the left and top of the view. For example, the top left
-     * corner of the image would be (0, 0). And the bottom right corner would be (1, 1).
-     *
-     * @param scale
-     * @param focusX
-     * @param focusY
-     */
-    public void setZoom(float scale, float focusX, float focusY) {
-        setZoom(scale, focusX, focusY, mScaleType);
-    }
-
-    /**
-     * Set zoom to the specified scale. Image will be centered around the point
-     * (focusX, focusY). These floats range from 0 to 1 and denote the focus point
-     * as a fraction from the left and top of the view. For example, the top left
-     * corner of the image would be (0, 0). And the bottom right corner would be (1, 1).
-     *
-     * @param scale
-     * @param focusX
-     * @param focusY
-     * @param scaleType
-     */
-    public void setZoom(float scale, float focusX, float focusY, ScaleType scaleType) {
-        //
-        // setZoom can be called before the image is on the screen, but at this point,
-        // image and view sizes have not yet been calculated in onMeasure. Thus, we should
-        // delay calling setZoom until the view has been measured.
-        //
-        if (!onDrawReady) {
-            delayedZoomVariables = new ZoomVariables(scale, focusX, focusY, scaleType);
-            return;
-        }
-
-        if (scaleType != mScaleType) {
-            setScaleType(scaleType);
-        }
-        resetZoom();
-        scaleImage(scale, viewWidth / 2, viewHeight / 2, true);
-        matrix.getValues(m);
-        m[Matrix.MTRANS_X] = -((focusX * getImageWidth()) - (viewWidth * 0.5f));
-        m[Matrix.MTRANS_Y] = -((focusY * getImageHeight()) - (viewHeight * 0.5f));
-        matrix.setValues(m);
-        fixTrans();
-        setImageMatrix(matrix);
-    }
-
-    /**
-     * Set zoom parameters equal to another TouchImageView. Including scale, position,
-     * and ScaleType.
-     *
-     * @param img
-     */
-    public void setZoom(CropImageView img) {
-        PointF center = img.getScrollPosition();
-        setZoom(img.getCurrentZoom(), center.x, center.y, img.getScaleType());
-    }
-
-    /**
-     * Return the point at the center of the zoomed image. The PointF coordinates range
-     * in value between 0 and 1 and the focus point is denoted as a fraction from the left
-     * and top of the view. For example, the top left corner of the image would be (0, 0).
-     * And the bottom right corner would be (1, 1).
-     *
-     * @return PointF representing the scroll position of the zoomed image.
-     */
-    public PointF getScrollPosition() {
-        Drawable drawable = getDrawable();
-        if (drawable == null) {
-            return null;
-        }
-        int drawableWidth = drawable.getIntrinsicWidth();
-        int drawableHeight = drawable.getIntrinsicHeight();
-
-        PointF point = transformCoordTouchToBitmap(viewWidth / 2, viewHeight / 2, true);
-        point.x /= drawableWidth;
-        point.y /= drawableHeight;
-        return point;
-    }
-
-    /**
-     * Set the focus point of the zoomed image. The focus points are denoted as a fraction from the
-     * left and top of the view. The focus points can range in value between 0 and 1.
-     *
-     * @param focusX
-     * @param focusY
-     */
-    public void setScrollPosition(float focusX, float focusY) {
-        setZoom(normalizedScale, focusX, focusY);
+    public PointF getDrawablePointFromTouchPoint(PointF p) {
+        return transformCoordTouchToBitmap(p.x, p.y, true);
     }
 
     /**
@@ -502,9 +362,6 @@ public class CropImageView extends ImageView {
     }
 
     private float getFixDragTrans(float delta, float viewSize, float contentSize) {
-        if (contentSize <= viewSize) {
-            return 0;
-        }
         return delta;
     }
 
@@ -554,7 +411,7 @@ public class CropImageView extends ImageView {
         if (drawable == null || drawable.getIntrinsicWidth() == 0 || drawable.getIntrinsicHeight() == 0) {
             return;
         }
-        if (matrix == null || prevMatrix == null) {
+        if (matrix == null || savedMatrix == null) {
             return;
         }
 
@@ -566,60 +423,26 @@ public class CropImageView extends ImageView {
         //
         float scaleX = (float) viewWidth / drawableWidth;
         float scaleY = (float) viewHeight / drawableHeight;
-
-        switch (mScaleType) {
-            case CENTER:
-                scaleX = scaleY = 1;
-                break;
-
-            case CENTER_CROP:
-                scaleX = scaleY = Math.max(scaleX, scaleY);
-                break;
-
-            case CENTER_INSIDE:
-                scaleX = scaleY = Math.min(1, Math.min(scaleX, scaleY));
-
-            case FIT_CENTER:
-                scaleX = scaleY = Math.min(scaleX, scaleY);
-                break;
-
-            case FIT_XY:
-                break;
-
-            default:
-                //
-                // FIT_START and FIT_END not supported
-                //
-                throw new UnsupportedOperationException("TouchImageView does not support FIT_START or FIT_END");
-
-        }
+        float scale = Math.min(scaleX, scaleY);
 
         //
         // Center the image
         //
-        float redundantXSpace = viewWidth - (scaleX * drawableWidth);
-        float redundantYSpace = viewHeight - (scaleY * drawableHeight);
+        float redundantYSpace = viewHeight - (scale * drawableHeight);
+        float redundantXSpace = viewWidth - (scale * drawableWidth);
         matchViewWidth = viewWidth - redundantXSpace;
         matchViewHeight = viewHeight - redundantYSpace;
-        if (!isZoomed() && !imageRenderedAtLeastOnce) {
+        if (normalizedScale == 1 || setImageCalledRecenterImage) {
             //
             // Stretch and center image to fit view
             //
-            matrix.setScale(scaleX, scaleY);
+            matrix.setScale(scale, scale);
             matrix.postTranslate(redundantXSpace / 2, redundantYSpace / 2);
             normalizedScale = 1;
+            setImageCalledRecenterImage = false;
 
         } else {
-            //
-            // These values should never be 0 or we will set viewWidth and viewHeight
-            // to NaN in translateMatrixAfterRotate. To avoid this, call savePreviousImageValues
-            // to set them equal to the current values.
-            //
-            if (prevMatchViewWidth == 0 || prevMatchViewHeight == 0) {
-                savePreviousImageValues();
-            }
-
-            prevMatrix.getValues(m);
+            savedMatrix.getValues(m);
 
             //
             // Rescale Matrix after rotation
@@ -652,7 +475,6 @@ public class CropImageView extends ImageView {
             //
             matrix.setValues(m);
         }
-        fixTrans();
         setImageMatrix(matrix);
     }
 
@@ -726,28 +548,6 @@ public class CropImageView extends ImageView {
         this.state = state;
     }
 
-    public boolean canScrollHorizontallyFroyo(int direction) {
-        return canScrollHorizontally(direction);
-    }
-
-    @Override
-    public boolean canScrollHorizontally(int direction) {
-        matrix.getValues(m);
-        float x = m[Matrix.MTRANS_X];
-
-        if (getImageWidth() < viewWidth) {
-            return false;
-
-        } else if (x >= -1 && direction < 0) {
-            return false;
-
-        } else if (Math.abs(x) + viewWidth + 1 >= getImageWidth() && direction > 0) {
-            return false;
-        }
-
-        return true;
-    }
-
     /**
      * Gesture Listener detects a single click or long click and passes that on
      * to the view's listener.
@@ -758,9 +558,6 @@ public class CropImageView extends ImageView {
 
         @Override
         public boolean onSingleTapConfirmed(MotionEvent e) {
-            if (doubleTapListener != null) {
-                return doubleTapListener.onSingleTapConfirmed(e);
-            }
             return performClick();
         }
 
@@ -786,9 +583,6 @@ public class CropImageView extends ImageView {
         @Override
         public boolean onDoubleTap(MotionEvent e) {
             boolean consumed = false;
-            if (doubleTapListener != null) {
-                consumed = doubleTapListener.onDoubleTap(e);
-            }
             if (state == State.NONE) {
                 float targetZoom = (normalizedScale == minScale) ? maxScale : minScale;
                 DoubleTapZoom doubleTap = new DoubleTapZoom(targetZoom, e.getX(), e.getY(), false);
@@ -797,18 +591,6 @@ public class CropImageView extends ImageView {
             }
             return consumed;
         }
-
-        @Override
-        public boolean onDoubleTapEvent(MotionEvent e) {
-            if (doubleTapListener != null) {
-                return doubleTapListener.onDoubleTapEvent(e);
-            }
-            return false;
-        }
-    }
-
-    public interface OnTouchImageViewListener {
-        public void onMove();
     }
 
     /**
@@ -817,7 +599,7 @@ public class CropImageView extends ImageView {
      *
      * @author Ortiz
      */
-    private class PrivateOnTouchListener implements OnTouchListener {
+    private class TouchImageViewListener implements OnTouchListener {
 
         //
         // Remember last point position for dragging
@@ -859,21 +641,6 @@ public class CropImageView extends ImageView {
             }
 
             setImageMatrix(matrix);
-
-            //
-            // User-defined OnTouchListener
-            //
-            if (userTouchListener != null) {
-                userTouchListener.onTouch(v, event);
-            }
-
-            //
-            // OnTouchImageViewListener is set: TouchImageView dragged by user.
-            //
-            if (touchImageViewListener != null) {
-                touchImageViewListener.onMove();
-            }
-
             //
             // indicate event was handled
             //
@@ -896,13 +663,6 @@ public class CropImageView extends ImageView {
         @Override
         public boolean onScale(ScaleGestureDetector detector) {
             scaleImage(detector.getScaleFactor(), detector.getFocusX(), detector.getFocusY(), true);
-
-            //
-            // OnTouchImageViewListener is set: TouchImageView pinch zoomed by user.
-            //
-            if (touchImageViewListener != null) {
-                touchImageViewListener.onMove();
-            }
             return true;
         }
 
@@ -928,7 +688,7 @@ public class CropImageView extends ImageView {
         }
     }
 
-    private void scaleImage(double deltaScale, float focusX, float focusY, boolean stretchImageToSuper) {
+    private void scaleImage(float deltaScale, float focusX, float focusY, boolean stretchImageToSuper) {
 
         float lowerScale, upperScale;
         if (stretchImageToSuper) {
@@ -950,7 +710,7 @@ public class CropImageView extends ImageView {
             deltaScale = lowerScale / origScale;
         }
 
-        matrix.postScale((float) deltaScale, (float) deltaScale, focusX, focusY);
+        matrix.postScale(deltaScale, deltaScale, focusX, focusY);
         fixScaleTrans();
     }
 
@@ -991,20 +751,11 @@ public class CropImageView extends ImageView {
         @Override
         public void run() {
             float t = interpolate();
-            double deltaScale = calculateDeltaScale(t);
+            float deltaScale = calculateDeltaScale(t);
             scaleImage(deltaScale, bitmapX, bitmapY, stretchImageToSuper);
             translateImageToCenterTouchPosition(t);
             fixScaleTrans();
             setImageMatrix(matrix);
-
-            //
-            // OnTouchImageViewListener is set: double tap runnable updates listener
-            // with every frame.
-            //
-            if (touchImageViewListener != null) {
-                touchImageViewListener.onMove();
-            }
-
             if (t < 1f) {
                 //
                 // We haven't finished zooming
@@ -1016,6 +767,7 @@ public class CropImageView extends ImageView {
                 // Finished zooming
                 //
                 setState(State.NONE);
+                invalidate();
             }
         }
 
@@ -1052,8 +804,8 @@ public class CropImageView extends ImageView {
          * @param t
          * @return
          */
-        private double calculateDeltaScale(float t) {
-            double zoom = startZoom + t * (targetZoom - startZoom);
+        private float calculateDeltaScale(float t) {
+            float zoom = startZoom + t * (targetZoom - startZoom);
             return zoom / normalizedScale;
         }
     }
@@ -1078,8 +830,8 @@ public class CropImageView extends ImageView {
         float finalY = ((y - transY) * origH) / getImageHeight();
 
         if (clipToBitmap) {
-            finalX = Math.min(Math.max(finalX, 0), origW);
-            finalY = Math.min(Math.max(finalY, 0), origH);
+            finalX = Math.min(Math.max(x, 0), origW);
+            finalY = Math.min(Math.max(y, 0), origH);
         }
 
         return new PointF(finalX, finalY);
@@ -1113,12 +865,12 @@ public class CropImageView extends ImageView {
      */
     private class Fling implements Runnable {
 
-        CompatScroller scroller;
+        Scroller scroller;
         int currX, currY;
 
         Fling(int velocityX, int velocityY) {
             setState(State.FLING);
-            scroller = new CompatScroller(context);
+            scroller = new Scroller(context);
             matrix.getValues(m);
 
             int startX = (int) m[Matrix.MTRANS_X];
@@ -1156,15 +908,6 @@ public class CropImageView extends ImageView {
 
         @Override
         public void run() {
-
-            //
-            // OnTouchImageViewListener is set: TouchImageView listener has been flung by user.
-            // Listener runnable updated with each frame of fling animation.
-            //
-            if (touchImageViewListener != null) {
-                touchImageViewListener.onMove();
-            }
-
             if (scroller.isFinished()) {
                 scroller = null;
                 return;
@@ -1185,76 +928,9 @@ public class CropImageView extends ImageView {
         }
     }
 
-    @TargetApi(Build.VERSION_CODES.GINGERBREAD)
-    private class CompatScroller {
-        Scroller scroller;
-        OverScroller overScroller;
-        boolean isPreGingerbread;
-
-        public CompatScroller(Context context) {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.GINGERBREAD) {
-                isPreGingerbread = true;
-                scroller = new Scroller(context);
-
-            } else {
-                isPreGingerbread = false;
-                overScroller = new OverScroller(context);
-            }
-        }
-
-        public void fling(int startX, int startY, int velocityX, int velocityY, int minX, int maxX, int minY, int maxY) {
-            if (isPreGingerbread) {
-                scroller.fling(startX, startY, velocityX, velocityY, minX, maxX, minY, maxY);
-            } else {
-                overScroller.fling(startX, startY, velocityX, velocityY, minX, maxX, minY, maxY);
-            }
-        }
-
-        public void forceFinished(boolean finished) {
-            if (isPreGingerbread) {
-                scroller.forceFinished(finished);
-            } else {
-                overScroller.forceFinished(finished);
-            }
-        }
-
-        public boolean isFinished() {
-            if (isPreGingerbread) {
-                return scroller.isFinished();
-            } else {
-                return overScroller.isFinished();
-            }
-        }
-
-        public boolean computeScrollOffset() {
-            if (isPreGingerbread) {
-                return scroller.computeScrollOffset();
-            } else {
-                overScroller.computeScrollOffset();
-                return overScroller.computeScrollOffset();
-            }
-        }
-
-        public int getCurrX() {
-            if (isPreGingerbread) {
-                return scroller.getCurrX();
-            } else {
-                return overScroller.getCurrX();
-            }
-        }
-
-        public int getCurrY() {
-            if (isPreGingerbread) {
-                return scroller.getCurrY();
-            } else {
-                return overScroller.getCurrY();
-            }
-        }
-    }
-
     @TargetApi(Build.VERSION_CODES.JELLY_BEAN)
     private void compatPostOnAnimation(Runnable runnable) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+        if (VERSION.SDK_INT >= VERSION_CODES.JELLY_BEAN) {
             postOnAnimation(runnable);
 
         } else {
@@ -1262,58 +938,17 @@ public class CropImageView extends ImageView {
         }
     }
 
-    private class ZoomVariables {
-        public float scale;
-        public float focusX;
-        public float focusY;
-        public ScaleType scaleType;
-
-        public ZoomVariables(float scale, float focusX, float focusY, ScaleType scaleType) {
-            this.scale = scale;
-            this.focusX = focusX;
-            this.focusY = focusY;
-            this.scaleType = scaleType;
-        }
-    }
-
     private void printMatrixInfo() {
-        float[] n = new float[9];
-        matrix.getValues(n);
-        Log.d(DEBUG, "Scale: " + n[Matrix.MSCALE_X] + " TransX: " + n[Matrix.MTRANS_X] + " TransY: " + n[Matrix.MTRANS_Y]);
+        matrix.getValues(m);
+        Log.d("CropImageView", "Scale: " + m[Matrix.MSCALE_X] + " TransX: " + m[Matrix.MTRANS_X] + " TransY: " + m[Matrix.MTRANS_Y]);
     }
 
     @Override
     protected void onDraw(Canvas canvas) {
-        onDrawReady = true;
-        imageRenderedAtLeastOnce = true;
-        if (delayedZoomVariables != null) {
-            setZoom(delayedZoomVariables.scale, delayedZoomVariables.focusX, delayedZoomVariables.focusY, delayedZoomVariables.scaleType);
-            delayedZoomVariables = null;
-        }
         super.onDraw(canvas);
 
         int x = this.getWidth();
         int y = this.getHeight();
-
-        canvas.saveLayerAlpha(0, 0, x, y,0xFF,Canvas.ALL_SAVE_FLAG);
-        Paint bgPaint = new Paint();
-        bgPaint.setColor(0Xaa000000);
-        canvas.drawRect(0, 0, x, y, bgPaint);
-
-        Paint boderPaint = new Paint();
-        boderPaint.setColor(0xFFFFFFFF);
-        canvas.drawRect(x / 6, y / 6, x * 5 / 6, y * 5 / 6, boderPaint);
-
-
-        x0 = x / 6 + 1;
-        y0 = y / 6 + 1;
-        x1 = x * 5 / 6 - 1;
-        y1 = y * 5 / 6 - 1;
-        Paint centerPaint = new Paint();
-        centerPaint.setColor(0xFF000000);
-        centerPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_OUT));
-        canvas.drawRect(x / 6 + 1, y / 6 + 1, x * 5 / 6 - 1, y * 5 / 6 - 1, centerPaint);
-        /*
         Paint paint = new Paint();
         paint.setColor(0xaa000000);
         w = (float) (Math.min(x, y) * 0.7);
@@ -1339,7 +974,6 @@ public class CropImageView extends ImageView {
                 x1, y1, x2, y2,
                 x2, y2, x3, y3,
                 x3, y3, x0, y0}, paintLine);
-                */
 
     }
 
@@ -1349,8 +983,8 @@ public class CropImageView extends ImageView {
         final Bitmap croppedBitmap = Bitmap.createBitmap(bitMap,
                 (int) x0,
                 (int) y0,
-                (int) x1,
-                (int) y1);
+                (int) w,
+                (int) w);
         bitMap.recycle();
         setDrawingCacheEnabled(false);
         return croppedBitmap;
@@ -1373,3 +1007,4 @@ public class CropImageView extends ImageView {
         return compressData;
     }
 }
+

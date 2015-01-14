@@ -4,6 +4,10 @@ import android.support.v7.app.ActionBarActivity;
 import android.os.Bundle;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.View;
+import android.widget.ImageView;
+
+import info.daniex.cropimage.CropImageView;
 
 
 public class MainActivity extends ActionBarActivity {
@@ -12,6 +16,14 @@ public class MainActivity extends ActionBarActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        final CropImageView croppingView = (CropImageView)findViewById(R.id.cropping_view);
+        findViewById(R.id.button).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                ImageView target = (ImageView) findViewById(R.id.target_view);
+                target.setImageBitmap(croppingView.getCroppedImage());
+            }
+        });
     }
 
 
