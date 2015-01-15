@@ -3,6 +3,7 @@ package info.daniex.cropimage;
 import android.annotation.TargetApi;
 import android.content.Context;
 import android.content.res.Configuration;
+import android.content.res.TypedArray;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Matrix;
@@ -35,11 +36,20 @@ import java.io.IOException;
  */
 public class CropImageView extends ImageView {
 
-    private float w;
     private float x0;
     private float y0;
     private float x1;
     private float y1;
+    private float cropWidth;
+    private float cropHeight;
+
+    private int boderColor = 0xFFFFFFFF;
+    private int shadowColor = 0Xaa000000;
+
+    private int retX;
+    private int retY;
+
+    private int boundary;
 
 
     private static final String DEBUG = "DEBUG";
@@ -110,11 +120,25 @@ public class CropImageView extends ImageView {
     public CropImageView(Context context, AttributeSet attrs) {
         super(context, attrs);
         sharedConstructing(context);
+        sharedInitCorpParams(attrs, 0);
     }
 
     public CropImageView(Context context, AttributeSet attrs, int defStyle) {
         super(context, attrs, defStyle);
         sharedConstructing(context);
+        sharedInitCorpParams(attrs, defStyle);
+    }
+
+    private void sharedInitCorpParams(AttributeSet attrs, int defStyle) {
+        TypedArray a = context.obtainStyledAttributes(attrs,
+                R.styleable.CropImageView, defStyle, 0);
+
+        shadowColor = a.getColor(R.styleable.CropImageView_shadowColor, shadowColor);
+        boderColor = a.getColor(R.styleable.CropImageView_borderColor, boderColor);
+        boundary = a.getInt(R.styleable.CropImageView_boundary, 0);
+
+        retX = a.getDimensionPixelSize(R.styleable.CropImageView_retX, -1);
+        retY = a.getDimensionPixelSize(R.styleable.CropImageView_retY, -1);
     }
 
     private void sharedConstructing(Context context) {
@@ -126,11 +150,12 @@ public class CropImageView extends ImageView {
         prevMatrix = new Matrix();
         m = new float[9];
         normalizedScale = 1;
-        if (mScaleType == null) {
-            mScaleType = ScaleType.FIT_CENTER;
-        }
-        minScale = 1;
-        maxScale = 3;
+//Daniex
+//        if (mScaleType == null) {
+//            mScaleType = ScaleType.FIT_CENTER;
+//        }
+        minScale = 0.2f;
+        maxScale = 5;
         superMinScale = SUPER_MIN_MULTIPLIER * minScale;
         superMaxScale = SUPER_MAX_MULTIPLIER * maxScale;
         setImageMatrix(matrix);
@@ -140,19 +165,20 @@ public class CropImageView extends ImageView {
         super.setOnTouchListener(new PrivateOnTouchListener());
     }
 
-    @Override
-    public void setOnTouchListener(OnTouchListener l) {
-        userTouchListener = l;
-    }
+    /*Daniex
+        @Override
+        public void setOnTouchListener(OnTouchListener l) {
+            userTouchListener = l;
+        }
 
-    public void setOnTouchImageViewListener(OnTouchImageViewListener l) {
-        touchImageViewListener = l;
-    }
+        public void setOnTouchImageViewListener(OnTouchImageViewListener l) {
+            touchImageViewListener = l;
+        }
 
-    public void setOnDoubleTapListener(GestureDetector.OnDoubleTapListener l) {
-        doubleTapListener = l;
-    }
-
+        public void setOnDoubleTapListener(GestureDetector.OnDoubleTapListener l) {
+            doubleTapListener = l;
+        }
+    */
     @Override
     public void setImageResource(int resId) {
         super.setImageResource(resId);
@@ -181,26 +207,27 @@ public class CropImageView extends ImageView {
         fitImageToView();
     }
 
-    @Override
-    public void setScaleType(ScaleType type) {
-        if (type == ScaleType.FIT_START || type == ScaleType.FIT_END) {
-            throw new UnsupportedOperationException("TouchImageView does not support FIT_START or FIT_END");
-        }
-        if (type == ScaleType.MATRIX) {
-            super.setScaleType(ScaleType.MATRIX);
+    /*
+        @Override
+        public void setScaleType(ScaleType type) {
+            if (type == ScaleType.FIT_START || type == ScaleType.FIT_END) {
+                throw new UnsupportedOperationException("TouchImageView does not support FIT_START or FIT_END");
+            }
+            if (type == ScaleType.MATRIX) {
+                super.setScaleType(ScaleType.MATRIX);
 
-        } else {
-            mScaleType = type;
-            if (onDrawReady) {
-                //
-                // If the image is already rendered, scaleType has been called programmatically
-                // and the TouchImageView should be updated with the new scaleType.
-                //
-                setZoom(this);
+            } else {
+                mScaleType = type;
+                if (onDrawReady) {
+                    //
+                    // If the image is already rendered, scaleType has been called programmatically
+                    // and the TouchImageView should be updated with the new scaleType.
+                    //
+                    setZoom(this);
+                }
             }
         }
-    }
-
+    */
     @Override
     public ScaleType getScaleType() {
         return mScaleType;
@@ -501,13 +528,6 @@ public class CropImageView extends ImageView {
         return 0;
     }
 
-    private float getFixDragTrans(float delta, float viewSize, float contentSize) {
-        if (contentSize <= viewSize) {
-            return 0;
-        }
-        return delta;
-    }
-
     private float getImageWidth() {
         return matchViewWidth * normalizedScale;
     }
@@ -566,7 +586,8 @@ public class CropImageView extends ImageView {
         //
         float scaleX = (float) viewWidth / drawableWidth;
         float scaleY = (float) viewHeight / drawableHeight;
-
+        float scale = Math.min(scaleX, scaleY); //Daniex
+/* Daniex
         switch (mScaleType) {
             case CENTER:
                 scaleX = scaleY = 1;
@@ -593,7 +614,7 @@ public class CropImageView extends ImageView {
                 throw new UnsupportedOperationException("TouchImageView does not support FIT_START or FIT_END");
 
         }
-
+*/
         //
         // Center the image
         //
@@ -605,7 +626,8 @@ public class CropImageView extends ImageView {
             //
             // Stretch and center image to fit view
             //
-            matrix.setScale(scaleX, scaleY);
+            matrix.setScale(scale, scale);
+            //Daniex matrix.setScale(scaleX, scaleY);
             matrix.postTranslate(redundantXSpace / 2, redundantYSpace / 2);
             normalizedScale = 1;
 
@@ -652,7 +674,7 @@ public class CropImageView extends ImageView {
             //
             matrix.setValues(m);
         }
-        fixTrans();
+//Daniex        fixTrans();
         setImageMatrix(matrix);
     }
 
@@ -735,6 +757,21 @@ public class CropImageView extends ImageView {
         matrix.getValues(m);
         float x = m[Matrix.MTRANS_X];
 
+        if (boundary == 2){
+            return true;
+        }
+        if (boundary == 1) {
+            if (getImageWidth() < viewWidth) {
+                return false;
+
+            } else if (x >= -1 && direction < 0) {
+                return false;
+
+            } else if (Math.abs(x) + viewWidth + 1 >= getImageWidth() && direction > 0) {
+                return false;
+            }
+        }
+    /*
         if (getImageWidth() < viewWidth) {
             return false;
 
@@ -744,7 +781,12 @@ public class CropImageView extends ImageView {
         } else if (Math.abs(x) + viewWidth + 1 >= getImageWidth() && direction > 0) {
             return false;
         }
+*/
+        return true;
+    }
 
+    @Override
+    public boolean canScrollVertically(int direction) {
         return true;
     }
 
@@ -841,12 +883,33 @@ public class CropImageView extends ImageView {
 
                     case MotionEvent.ACTION_MOVE:
                         if (state == State.DRAG) {
-                            float deltaX = curr.x - last.x;
-                            float deltaY = curr.y - last.y;
-                            float fixTransX = getFixDragTrans(deltaX, viewWidth, getImageWidth());
-                            float fixTransY = getFixDragTrans(deltaY, viewHeight, getImageHeight());
+                            float fixTransX = curr.x - last.x;
+                            float fixTransY = curr.y - last.y;
+
+                            float imageWidth = getImageWidth();
+                            float imageHeight = getImageHeight();
+                            if (boundary == 0){
+                                if (cropWidth > imageWidth){
+                                    fixTransX = 0;
+                                }
+                            } else if (boundary == 1){
+                                if (cropWidth > imageWidth && cropHeight > imageHeight){
+                                    fixTransX = 0;
+                                }
+                            }
+
+                            if (boundary == 0){
+                                if (cropHeight > imageHeight){
+                                    fixTransY = 0;
+                                }
+                            } else if (boundary == 1){
+                                if (cropHeight > imageHeight && cropHeight > imageHeight){
+                                    fixTransY = 0;
+                                }
+                            }
+
                             matrix.postTranslate(fixTransX, fixTransY);
-                            fixTrans();
+//                            fixTrans();
                             last.set(curr.x, curr.y);
                         }
                         break;
@@ -1287,60 +1350,53 @@ public class CropImageView extends ImageView {
         onDrawReady = true;
         imageRenderedAtLeastOnce = true;
         if (delayedZoomVariables != null) {
-            setZoom(delayedZoomVariables.scale, delayedZoomVariables.focusX, delayedZoomVariables.focusY, delayedZoomVariables.scaleType);
+            setZoom(delayedZoomVariables.scale, delayedZoomVariables.focusX,
+                    delayedZoomVariables.focusY, delayedZoomVariables.scaleType);
             delayedZoomVariables = null;
         }
         super.onDraw(canvas);
 
         int x = this.getWidth();
         int y = this.getHeight();
-
-        canvas.saveLayerAlpha(0, 0, x, y,0xFF,Canvas.ALL_SAVE_FLAG);
+        calculateDistance(x, y);
+        canvas.saveLayerAlpha(0, 0, x, y, 0xFF, Canvas.ALL_SAVE_FLAG);
         Paint bgPaint = new Paint();
         bgPaint.setColor(0Xaa000000);
         canvas.drawRect(0, 0, x, y, bgPaint);
 
+        cropHeight = y1 - y0;
         Paint boderPaint = new Paint();
         boderPaint.setColor(0xFFFFFFFF);
-        canvas.drawRect(x / 6, y / 6, x * 5 / 6, y * 5 / 6, boderPaint);
+        canvas.drawRect(x0 - 1, y0 - 1, x1 + 1, y1 + 1, boderPaint);
 
-
-        x0 = x / 6 + 1;
-        y0 = y / 6 + 1;
-        x1 = x * 5 / 6 - 1;
-        y1 = y * 5 / 6 - 1;
         Paint centerPaint = new Paint();
         centerPaint.setColor(0xFF000000);
         centerPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_OUT));
-        canvas.drawRect(x / 6 + 1, y / 6 + 1, x * 5 / 6 - 1, y * 5 / 6 - 1, centerPaint);
-        /*
-        Paint paint = new Paint();
-        paint.setColor(0xaa000000);
-        w = (float) (Math.min(x, y) * 0.7);
-        x0 = (x - w) / 2;
-        y0 = (y - w) / 2;
-        float x1 = x0 + w, y1 = y0;
-        float x2 = x1, y2 = y1 + w;
-        float x3 = x0, y3 = y0 + w;
+        canvas.drawRect(x0, y0, x1, y1, centerPaint);
+    }
 
-        //left
-        canvas.drawRect(0, y0, x3, y3, paint);
-        //top
-        canvas.drawRect(0, 0, x, y0, paint);
-        //right
-        canvas.drawRect(x1, y1, x, y2, paint);
-        //bottom
-        canvas.drawRect(0, y3, x, y, paint);
-
-        Paint paintLine = new Paint();
-        paintLine.setColor(0xFFFFFFFF);
-        canvas.drawLines(new float[]{
-                x0, y0, x1, y1,
-                x1, y1, x2, y2,
-                x2, y2, x3, y3,
-                x3, y3, x0, y0}, paintLine);
-                */
-
+    private void calculateDistance(int x, int y) {
+        if (retX >= x) {
+            x0 = 0;
+            x1 = x;
+        } else if (retX <= 0) {
+            x0 = x / 6;
+            x1 = x * 5 / 6;
+        } else {
+            x0 = (x - retX) / 2;
+            x1 = (x + retX) / 2;
+        }
+        cropWidth = x1 - x0;
+        if (retY >= y) {
+            y0 = 0;
+            y1 = y;
+        } else if (retY <= 0) {
+            y0 = y / 6;
+            y1 = y * 5 / 6;
+        } else {
+            y0 = (y - retY) / 2;
+            y1 = (y + retY) / 2;
+        }
     }
 
     public Bitmap getCroppedImage() {
@@ -1349,8 +1405,8 @@ public class CropImageView extends ImageView {
         final Bitmap croppedBitmap = Bitmap.createBitmap(bitMap,
                 (int) x0,
                 (int) y0,
-                (int) x1,
-                (int) y1);
+                (int) (x1 - x0),
+                (int) (y1 - y0));
         bitMap.recycle();
         setDrawingCacheEnabled(false);
         return croppedBitmap;
