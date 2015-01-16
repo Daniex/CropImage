@@ -1,0 +1,13 @@
+<resources>
+    <declare-styleable name="CropImageView">
+        <attr name="shadowColor" format="color"/>
+        <attr name="borderColor" format="color"/>
+        <attr name="retX" format="dimension" />
+        <attr name="retY" format="dimension" />
+        <attr name="boundary" format="integer">
+            <flag name="shortSide" value="0"/>
+            <flag name="longSid" value="1"/>
+            <flag name="none" value="2"/>
+        </attr>
+    </declare-styleable>
+</resources>
